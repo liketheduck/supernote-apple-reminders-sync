@@ -99,6 +99,31 @@ class AppleReminders:
         output = self._run_reminders_cli("show-lists")
         return [line.strip() for line in output.strip().split("\n") if line.strip()]
 
+    def list_lists_with_ids(self) -> list[dict]:
+        """Get all reminder lists with their calendar IDs."""
+        result = subprocess.run(
+            [str(SWIFT_HELPER), "list-calendars"],
+            capture_output=True,
+            text=True
+        )
+        if result.returncode != 0:
+            raise RuntimeError(f"Failed to list calendars: {result.stderr}")
+
+        lists = []
+        for line in result.stdout.strip().split("\n"):
+            if line.strip():
+                data = json.loads(line)
+                lists.append({"id": data["id"], "name": data["name"]})
+        return lists
+
+    def rename_list(self, old_name: str, new_name: str) -> None:
+        """Rename a reminder list."""
+        self._run_swift_helper("rename-list", old_name, new_name)
+
+    def delete_list(self, name: str) -> None:
+        """Delete a reminder list."""
+        self._run_swift_helper("delete-list", name)
+
     def get_all_reminders(self, include_completed: bool = True) -> list[UnifiedTask]:
         """
         Get all reminders from all lists.

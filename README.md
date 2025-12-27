@@ -5,6 +5,7 @@ A bidirectional sync tool that synchronizes tasks between a Supernote device's t
 ## Features
 
 - **Bidirectional sync**: Changes in either system propagate to the other
+- **Category rename tracking**: Renaming a category/list on either side automatically renames it on the other
 - **Document link preservation**: Supernote note links are preserved during sync
 - **Anti-loop architecture**: Content hashing prevents infinite sync loops
 - **Conflict resolution**: Uses modification timestamps to resolve conflicts
@@ -305,7 +306,15 @@ See `docs/supernote_schema.md` for full schema documentation.
 
 Uses two Swift-based tools for fast native EventKit access:
 - **reminders-cli**: For reading reminders (JSON output) and basic write operations (add, complete, uncomplete, delete, edit)
-- **reminder-helper**: Custom Swift helper for operations reminders-cli doesn't support (set-due-date, set-priority, move)
+- **reminder-helper**: Custom Swift helper for operations reminders-cli doesn't support (set-due-date, set-priority, move, rename-list, delete-list)
+
+### Category Sync
+
+Categories are tracked by their internal IDs (not names) to detect renames:
+- Supernote uses `task_list_id` (UUID)
+- Apple uses `calendarIdentifier` (UUID)
+
+When you rename a category on one system, the sync detects that the ID still exists but the name changed, and propagates the rename to the other system. This prevents orphaned tasks when categories are renamed.
 
 ## License
 

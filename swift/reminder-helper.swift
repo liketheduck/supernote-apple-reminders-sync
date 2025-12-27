@@ -168,6 +168,47 @@ func moveReminder(fromList: String, id: String, toList: String) -> Bool {
     }
 }
 
+func deleteList(name: String) -> Bool {
+    guard let calendar = getCalendar(name: name) else {
+        fputs("Error: List '\(name)' not found\n", stderr)
+        return false
+    }
+
+    do {
+        try store.removeCalendar(calendar, commit: true)
+        return true
+    } catch {
+        fputs("Error deleting list: \(error.localizedDescription)\n", stderr)
+        return false
+    }
+}
+
+func renameList(oldName: String, newName: String) -> Bool {
+    guard let calendar = getCalendar(name: oldName) else {
+        fputs("Error: List '\(oldName)' not found\n", stderr)
+        return false
+    }
+
+    calendar.title = newName
+
+    do {
+        try store.saveCalendar(calendar, commit: true)
+        return true
+    } catch {
+        fputs("Error renaming list: \(error.localizedDescription)\n", stderr)
+        return false
+    }
+}
+
+func listCalendars() {
+    let calendars = store.calendars(for: .reminder)
+    for calendar in calendars {
+        // Output as JSON for easy parsing
+        let escaped = calendar.title.replacingOccurrences(of: "\"", with: "\\\"")
+        print("{\"id\":\"\(calendar.calendarIdentifier)\",\"name\":\"\(escaped)\"}")
+    }
+}
+
 // Main
 guard requestAccess() else {
     fputs("Error: Reminders access denied\n", stderr)
@@ -178,9 +219,12 @@ let args = Array(CommandLine.arguments.dropFirst())
 guard args.count >= 1 else {
     print("""
     Usage:
-      swift reminder-helper.swift set-due-date <list> <id> <iso-date|null>
-      swift reminder-helper.swift set-priority <list> <id> <0-9>
-      swift reminder-helper.swift move <from-list> <id> <to-list>
+      reminder-helper set-due-date <list> <id> <iso-date|null>
+      reminder-helper set-priority <list> <id> <0-9>
+      reminder-helper move <from-list> <id> <to-list>
+      reminder-helper delete-list <list>
+      reminder-helper rename-list <old-name> <new-name>
+      reminder-helper list-calendars
     """)
     exit(1)
 }
@@ -209,6 +253,24 @@ case "move":
         exit(1)
     }
     success = moveReminder(fromList: args[1], id: args[2], toList: args[3])
+
+case "delete-list":
+    guard args.count >= 2 else {
+        fputs("Usage: delete-list <list>\n", stderr)
+        exit(1)
+    }
+    success = deleteList(name: args[1])
+
+case "rename-list":
+    guard args.count >= 3 else {
+        fputs("Usage: rename-list <old-name> <new-name>\n", stderr)
+        exit(1)
+    }
+    success = renameList(oldName: args[1], newName: args[2])
+
+case "list-calendars":
+    listCalendars()
+    success = true
 
 default:
     fputs("Unknown command: \(command)\n", stderr)

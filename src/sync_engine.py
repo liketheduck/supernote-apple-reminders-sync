@@ -75,6 +75,13 @@ class SyncEngine:
             logger.info("=== DRY RUN MODE ===")
 
         try:
+            # Sync categories first (handles renames)
+            logger.info("Syncing categories...")
+            category_changes = self._sync_categories(dry_run)
+            if category_changes:
+                for change in category_changes:
+                    logger.info(f"  {change}")
+
             # Load all tasks from both systems
             logger.info("Loading tasks from Supernote...")
             supernote_tasks = self.supernote.list_tasks(include_completed=True)
@@ -126,6 +133,136 @@ class SyncEngine:
             result.completed_at = datetime.now()
 
         return result
+
+    def _sync_categories(self, dry_run: bool = False) -> list[str]:
+        """
+        Sync categories/lists between systems, detecting and propagating renames.
+
+        Returns:
+            List of change descriptions for logging
+        """
+        changes = []
+
+        # Get current categories from both systems
+        supernote_cats = {c["id"]: c["name"] for c in self.supernote.list_categories_with_ids()}
+        apple_cats = {c["id"]: c["name"] for c in self.apple.list_lists_with_ids()}
+
+        # Get stored category mappings
+        stored_mappings = self.sync_state.get_all_categories()
+        stored_by_supernote = {m["supernote_id"]: m for m in stored_mappings}
+        stored_by_apple = {m["apple_id"]: m for m in stored_mappings}
+
+        # Detect renames on Supernote side
+        for sn_id, sn_name in supernote_cats.items():
+            if sn_id in stored_by_supernote:
+                mapping = stored_by_supernote[sn_id]
+                old_name = mapping["name"]
+                apple_id = mapping["apple_id"]
+
+                if sn_name != old_name:
+                    # Rename detected on Supernote
+                    changes.append(f"Supernote renamed '{old_name}' → '{sn_name}'")
+
+                    # Propagate to Apple if the old list exists there
+                    if apple_id and apple_id in apple_cats:
+                        apple_current_name = apple_cats[apple_id]
+                        if apple_current_name == old_name:
+                            if not dry_run:
+                                self.apple.rename_list(old_name, sn_name)
+                                self.sync_state.update_category_name(sn_id, apple_id, sn_name)
+                            changes.append(f"  → Renamed Apple list '{old_name}' → '{sn_name}'")
+                        else:
+                            # Apple was also renamed - use most recent? For now, Supernote wins
+                            if not dry_run:
+                                self.apple.rename_list(apple_current_name, sn_name)
+                                self.sync_state.update_category_name(sn_id, apple_id, sn_name)
+                            changes.append(f"  → Renamed Apple list '{apple_current_name}' → '{sn_name}' (conflict)")
+                    else:
+                        # No Apple list linked yet - update mapping name
+                        if not dry_run:
+                            self.sync_state.update_category_name(sn_id, apple_id or "", sn_name)
+
+        # Detect renames on Apple side
+        for apple_id, apple_name in apple_cats.items():
+            if apple_id in stored_by_apple:
+                mapping = stored_by_apple[apple_id]
+                old_name = mapping["name"]
+                sn_id = mapping["supernote_id"]
+
+                if apple_name != old_name and sn_id not in supernote_cats:
+                    # Rename detected on Apple (and not already handled above)
+                    changes.append(f"Apple renamed '{old_name}' → '{apple_name}'")
+
+                    # Propagate to Supernote if the old category exists there
+                    if sn_id and sn_id in supernote_cats:
+                        sn_current_name = supernote_cats[sn_id]
+                        if sn_current_name == old_name:
+                            if not dry_run:
+                                self.supernote.rename_category(sn_id, apple_name)
+                                self.sync_state.update_category_name(sn_id, apple_id, apple_name)
+                            changes.append(f"  → Renamed Supernote category '{old_name}' → '{apple_name}'")
+                    else:
+                        # No Supernote category linked yet - update mapping name
+                        if not dry_run:
+                            self.sync_state.update_category_name(sn_id or "", apple_id, apple_name)
+
+        # Match new categories by name and store mappings
+        for sn_id, sn_name in supernote_cats.items():
+            if sn_id not in stored_by_supernote:
+                # New Supernote category - find or create Apple match
+                apple_match = None
+                for apple_id, apple_name in apple_cats.items():
+                    if apple_name.lower() == sn_name.lower() and apple_id not in stored_by_apple:
+                        apple_match = apple_id
+                        break
+
+                if apple_match:
+                    if not dry_run:
+                        self.sync_state.upsert_category(sn_id, apple_match, sn_name)
+                    changes.append(f"Linked category '{sn_name}' (Supernote ↔ Apple)")
+                else:
+                    # Create on Apple side
+                    if not dry_run:
+                        self.apple._run_reminders_cli("new-list", sn_name)
+                        # Re-fetch to get the new ID
+                        new_apple_cats = {c["id"]: c["name"] for c in self.apple.list_lists_with_ids()}
+                        for aid, aname in new_apple_cats.items():
+                            if aname == sn_name and aid not in stored_by_apple:
+                                self.sync_state.upsert_category(sn_id, aid, sn_name)
+                                break
+                    changes.append(f"Created Apple list '{sn_name}' from Supernote")
+
+        for apple_id, apple_name in apple_cats.items():
+            if apple_id not in stored_by_apple:
+                # Check if already matched above
+                already_matched = any(
+                    m.get("apple_id") == apple_id
+                    for m in self.sync_state.get_all_categories()
+                ) if not dry_run else False
+
+                if not already_matched:
+                    # New Apple category - find or create Supernote match
+                    sn_match = None
+                    for sn_id, sn_name in supernote_cats.items():
+                        if sn_name.lower() == apple_name.lower():
+                            # Check if already stored
+                            existing = self.sync_state.get_category_by_supernote_id(sn_id) if not dry_run else None
+                            if not existing:
+                                sn_match = sn_id
+                                break
+
+                    if sn_match:
+                        if not dry_run:
+                            self.sync_state.upsert_category(sn_match, apple_id, apple_name)
+                        # Already logged above if it was a new link
+                    else:
+                        # Create on Supernote side
+                        if not dry_run:
+                            new_sn_id = self.supernote.create_category(apple_name)
+                            self.sync_state.upsert_category(new_sn_id, apple_id, apple_name)
+                        changes.append(f"Created Supernote category '{apple_name}' from Apple")
+
+        return changes
 
     def _dedupe_apple_tasks(self, tasks: list[UnifiedTask]) -> list[UnifiedTask]:
         """

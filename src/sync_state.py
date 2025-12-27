@@ -72,6 +72,26 @@ class SyncState:
                 ON sync_records(supernote_id)
             """)
 
+            # Category sync table - tracks category/list ID mappings for rename detection
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS category_sync (
+                    supernote_id TEXT,
+                    apple_id TEXT,
+                    name TEXT NOT NULL,
+                    PRIMARY KEY (supernote_id, apple_id)
+                )
+            """)
+
+            conn.execute("""
+                CREATE INDEX IF NOT EXISTS idx_category_supernote
+                ON category_sync(supernote_id)
+            """)
+
+            conn.execute("""
+                CREATE INDEX IF NOT EXISTS idx_category_apple
+                ON category_sync(apple_id)
+            """)
+
             conn.commit()
 
     def get_record(self, sync_id: str) -> Optional[SyncRecord]:
@@ -236,3 +256,109 @@ class SyncState:
                 "supernote_only": supernote_only,
                 "synced_both": both,
             }
+
+    # Category sync methods
+
+    def get_category_by_supernote_id(self, supernote_id: str) -> Optional[dict]:
+        """Get category mapping by Supernote task_list_id."""
+        with sqlite3.connect(self.db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            cursor = conn.execute(
+                "SELECT * FROM category_sync WHERE supernote_id = ?",
+                (supernote_id,)
+            )
+            row = cursor.fetchone()
+            if row:
+                return {
+                    "supernote_id": row["supernote_id"],
+                    "apple_id": row["apple_id"],
+                    "name": row["name"],
+                }
+        return None
+
+    def get_category_by_apple_id(self, apple_id: str) -> Optional[dict]:
+        """Get category mapping by Apple calendar ID."""
+        with sqlite3.connect(self.db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            cursor = conn.execute(
+                "SELECT * FROM category_sync WHERE apple_id = ?",
+                (apple_id,)
+            )
+            row = cursor.fetchone()
+            if row:
+                return {
+                    "supernote_id": row["supernote_id"],
+                    "apple_id": row["apple_id"],
+                    "name": row["name"],
+                }
+        return None
+
+    def get_category_by_name(self, name: str) -> Optional[dict]:
+        """Get category mapping by name."""
+        with sqlite3.connect(self.db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            cursor = conn.execute(
+                "SELECT * FROM category_sync WHERE name = ?",
+                (name,)
+            )
+            row = cursor.fetchone()
+            if row:
+                return {
+                    "supernote_id": row["supernote_id"],
+                    "apple_id": row["apple_id"],
+                    "name": row["name"],
+                }
+        return None
+
+    def get_all_categories(self) -> list[dict]:
+        """Get all category mappings."""
+        categories = []
+        with sqlite3.connect(self.db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            cursor = conn.execute("SELECT * FROM category_sync")
+            for row in cursor:
+                categories.append({
+                    "supernote_id": row["supernote_id"],
+                    "apple_id": row["apple_id"],
+                    "name": row["name"],
+                })
+        return categories
+
+    def upsert_category(self, supernote_id: str, apple_id: str, name: str):
+        """Insert or update a category mapping."""
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute("""
+                INSERT OR REPLACE INTO category_sync
+                (supernote_id, apple_id, name)
+                VALUES (?, ?, ?)
+            """, (supernote_id, apple_id, name))
+            conn.commit()
+
+    def update_category_name(self, supernote_id: str, apple_id: str, new_name: str):
+        """Update category name in the mapping."""
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute("""
+                UPDATE category_sync SET name = ?
+                WHERE supernote_id = ? AND apple_id = ?
+            """, (new_name, supernote_id, apple_id))
+            conn.commit()
+
+    def delete_category(self, supernote_id: str = None, apple_id: str = None):
+        """Delete a category mapping."""
+        with sqlite3.connect(self.db_path) as conn:
+            if supernote_id and apple_id:
+                conn.execute(
+                    "DELETE FROM category_sync WHERE supernote_id = ? AND apple_id = ?",
+                    (supernote_id, apple_id)
+                )
+            elif supernote_id:
+                conn.execute(
+                    "DELETE FROM category_sync WHERE supernote_id = ?",
+                    (supernote_id,)
+                )
+            elif apple_id:
+                conn.execute(
+                    "DELETE FROM category_sync WHERE apple_id = ?",
+                    (apple_id,)
+                )
+            conn.commit()

@@ -521,6 +521,38 @@ class SupernoteDB:
         self._categories_cache = None  # Invalidate cache
         return cat_id
 
+    def list_categories_with_ids(self) -> list[dict]:
+        """Get all categories with their IDs in consistent format."""
+        categories = self.list_categories(refresh=True)
+        return [{"id": cat_id, "name": name} for cat_id, name in categories.items()]
+
+    def rename_category(self, category_id: str, new_name: str) -> None:
+        """Rename a category by its ID."""
+        now_ms = int(datetime.now().timestamp() * 1000)
+        new_name_escaped = self._escape_sql(new_name)
+
+        sql = f"""
+        UPDATE t_schedule_task_group
+        SET title = '{new_name_escaped}', last_modified = {now_ms}
+        WHERE task_list_id = '{category_id}';
+        """
+
+        self._execute_sql(sql, fetch=False)
+        self._categories_cache = None  # Invalidate cache
+
+    def delete_category(self, category_id: str) -> None:
+        """Soft-delete a category by its ID."""
+        now_ms = int(datetime.now().timestamp() * 1000)
+
+        sql = f"""
+        UPDATE t_schedule_task_group
+        SET is_deleted = 'Y', last_modified = {now_ms}
+        WHERE task_list_id = '{category_id}';
+        """
+
+        self._execute_sql(sql, fetch=False)
+        self._categories_cache = None  # Invalidate cache
+
     def test_connection(self) -> bool:
         """Test database connection."""
         try:
