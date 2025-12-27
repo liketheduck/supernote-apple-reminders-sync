@@ -91,24 +91,34 @@ func setDueDate(listName: String, id: String, dateStr: String) -> Bool {
             } else {
                 // Try Python isoformat without timezone (assume local)
                 let localFormatter = DateFormatter()
-                localFormatter.dateFormat = "yyyy-MM-dd'T'HH:mm:ss"
                 localFormatter.timeZone = .current
+                // Try with microseconds first (Python's isoformat includes them)
+                localFormatter.dateFormat = "yyyy-MM-dd'T'HH:mm:ss.SSSSSS"
                 if let date = localFormatter.date(from: dateStr) {
                     reminder.dueDateComponents = Calendar.current.dateComponents(
                         [.year, .month, .day, .hour, .minute, .second],
                         from: date
                     )
                 } else {
-                    // Try date-only format
-                    localFormatter.dateFormat = "yyyy-MM-dd"
+                    // Try without microseconds
+                    localFormatter.dateFormat = "yyyy-MM-dd'T'HH:mm:ss"
                     if let date = localFormatter.date(from: dateStr) {
                         reminder.dueDateComponents = Calendar.current.dateComponents(
-                            [.year, .month, .day],
+                            [.year, .month, .day, .hour, .minute, .second],
                             from: date
                         )
                     } else {
-                        fputs("Error: Could not parse date '\(dateStr)'\n", stderr)
-                        return false
+                        // Try date-only format
+                        localFormatter.dateFormat = "yyyy-MM-dd"
+                        if let date = localFormatter.date(from: dateStr) {
+                            reminder.dueDateComponents = Calendar.current.dateComponents(
+                                [.year, .month, .day],
+                                from: date
+                            )
+                        } else {
+                            fputs("Error: Could not parse date '\(dateStr)'\n", stderr)
+                            return false
+                        }
                     }
                 }
             }

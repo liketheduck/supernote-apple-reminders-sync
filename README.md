@@ -16,13 +16,17 @@ A bidirectional sync tool that synchronizes tasks between a Supernote device's t
 
 - macOS (tested on Sonoma)
 - Python 3.11+
-- Docker (with Supernote MariaDB container running)
+- Docker (with Supernote MariaDB container running) OR remote MariaDB server
 - Swift compiler (included with Xcode Command Line Tools)
 
 ## Installation
 
 1. Clone this repository
-2. Install reminders-cli:
+2. Install Python dependencies:
+   ```bash
+   pip install -r requirements.txt
+   ```
+3. Install reminders-cli:
    ```bash
    cd /tmp
    git clone --depth 1 https://github.com/keith/reminders-cli.git
@@ -30,12 +34,12 @@ A bidirectional sync tool that synchronizes tasks between a Supernote device's t
    mkdir -p ~/.local/bin
    cp .build/release/reminders ~/.local/bin/
    ```
-3. Compile the Swift helper:
+4. Compile the Swift helper:
    ```bash
    cd swift
    swiftc -O -o reminder-helper reminder-helper.swift
    ```
-4. Grant Reminders access when prompted
+5. Grant Reminders access when prompted
 
 ## Quick Start
 
@@ -178,7 +182,10 @@ cp config/category_map.example.json config/category_map.json
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `SUPERNOTE_DB_PASSWORD` | **(required)** | Password for the Supernote MariaDB database |
-| `SUPERNOTE_DOCKER_CONTAINER` | `supernote-mariadb` | Docker container name running MariaDB |
+| `SUPERNOTE_DB_MODE` | `docker` | Connection mode: `docker` (local container) or `tcp` (remote server) |
+| `SUPERNOTE_DB_HOST` | `localhost` | MariaDB host (only used if mode=tcp) |
+| `SUPERNOTE_DB_PORT` | `3306` | MariaDB port (only used if mode=tcp) |
+| `SUPERNOTE_DOCKER_CONTAINER` | `supernote-mariadb` | Docker container name (only used if mode=docker) |
 | `SUPERNOTE_DB_NAME` | `supernotedb` | Database name |
 | `SUPERNOTE_DB_USER` | `supernote` | Database user |
 | `REMINDERS_CLI_PATH` | `~/.local/bin/reminders` | Path to reminders-cli binary |
@@ -296,7 +303,11 @@ The sync connects to MariaDB via `docker exec`. Ensure Docker Desktop is running
 
 ### Supernote Database
 
-The Supernote to-do database is MariaDB running in Docker. Key tables:
+The Supernote to-do database is MariaDB. Supports two connection modes:
+- **Docker mode** (default): Connects via `docker exec` to a local MariaDB container
+- **TCP mode**: Connects directly via TCP to a remote MariaDB server (e.g., NAS via Tailscale)
+
+Key tables:
 - `t_schedule_task`: Main tasks table
 - `t_schedule_task_group`: Categories/lists
 

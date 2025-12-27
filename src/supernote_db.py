@@ -4,14 +4,18 @@ Supernote Database Interface
 Connects to the Supernote MariaDB database to read and write tasks.
 Handles document link preservation and category management.
 
+Supports two connection modes:
+    - tcp: Direct TCP connection to MariaDB (for remote servers)
+    - docker: Docker exec to local container (original method)
+
 Security Architecture:
     SQL Injection Prevention:
     - All task/category IDs are validated via _validate_id() to allow only
       alphanumeric characters, hyphens, and underscores (UUID-safe characters)
     - User-controlled text (titles, notes) is escaped via _escape_sql() which
       handles backslashes, single quotes, and null bytes
-    - SQL is executed via Docker exec to the MariaDB container, providing
-      process isolation from the host system
+    - In docker mode, SQL is executed via Docker exec to the MariaDB container
+    - In tcp mode, pymysql handles connection security
     - The database user should have minimal required permissions
 
     Note: This architecture uses string escaping rather than parameterized queries
@@ -24,6 +28,12 @@ import re
 from datetime import datetime
 from typing import Optional
 import json
+
+try:
+    import pymysql
+    PYMYSQL_AVAILABLE = True
+except ImportError:
+    PYMYSQL_AVAILABLE = False
 
 from .models import UnifiedTask, DocumentLink
 from . import config
@@ -88,6 +98,9 @@ class SupernoteDB:
 
     def __init__(
         self,
+        mode: Optional[str] = None,
+        host: Optional[str] = None,
+        port: Optional[int] = None,
         container_name: Optional[str] = None,
         database: Optional[str] = None,
         user: Optional[str] = None,
@@ -99,17 +112,30 @@ class SupernoteDB:
         All parameters default to environment variables or config defaults.
 
         Args:
+            mode: Connection mode - "tcp" or "docker" (env: SUPERNOTE_DB_MODE)
+            host: Database host for TCP mode (env: SUPERNOTE_DB_HOST)
+            port: Database port for TCP mode (env: SUPERNOTE_DB_PORT)
             container_name: Docker container name (env: SUPERNOTE_DOCKER_CONTAINER)
             database: Database name (env: SUPERNOTE_DB_NAME)
             user: MySQL user (env: SUPERNOTE_DB_USER)
             password: MySQL password (env: SUPERNOTE_DB_PASSWORD, required)
         """
+        self.mode = mode or config.SUPERNOTE_DB_MODE
+        self.host = host or config.SUPERNOTE_DB_HOST
+        self.port = port or config.SUPERNOTE_DB_PORT
         self.container_name = container_name or config.SUPERNOTE_DOCKER_CONTAINER
         self.database = database or config.SUPERNOTE_DB_NAME
         self.user = user or config.SUPERNOTE_DB_USER
         self.password = password or config.get_db_password()
         self._user_id: Optional[int] = None
         self._categories_cache: Optional[dict] = None
+        self._connection = None
+
+        if self.mode == "tcp" and not PYMYSQL_AVAILABLE:
+            raise ImportError(
+                "pymysql is required for TCP connections. "
+                "Install it with: pip install pymysql"
+            )
 
     @staticmethod
     def _escape_sql(value: str) -> str:
@@ -131,8 +157,37 @@ class SupernoteDB:
             raise ValueError(f"Invalid ID format: {value}")
         return value
 
-    def _execute_sql(self, sql: str, fetch: bool = True) -> Optional[list[dict]]:
-        """Execute SQL via Docker and return results as list of dicts."""
+    def _get_connection(self):
+        """Get or create a pymysql connection for TCP mode."""
+        if self._connection is None or not self._connection.open:
+            self._connection = pymysql.connect(
+                host=self.host,
+                port=self.port,
+                user=self.user,
+                password=self.password,
+                database=self.database,
+                charset='utf8mb4',
+                cursorclass=pymysql.cursors.DictCursor,
+                autocommit=True
+            )
+        return self._connection
+
+    def _execute_sql_tcp(self, sql: str, fetch: bool = True) -> Optional[list[dict]]:
+        """Execute SQL via TCP connection and return results as list of dicts."""
+        conn = self._get_connection()
+        try:
+            with conn.cursor() as cursor:
+                cursor.execute(sql)
+                if not fetch:
+                    return None
+                rows = cursor.fetchall()
+                return list(rows) if rows else []
+        except pymysql.Error as e:
+            print(f"SQL Error: {e}")
+            raise
+
+    def _execute_sql_docker(self, sql: str, fetch: bool = True) -> Optional[list[dict]]:
+        """Execute SQL via Docker exec and return results as list of dicts."""
         cmd = [
             "docker", "exec", self.container_name,
             "mysql", "-u", self.user, f"-p{self.password}",
@@ -171,6 +226,13 @@ class SupernoteDB:
         except subprocess.CalledProcessError as e:
             print(f"SQL Error: {e.stderr}")
             raise
+
+    def _execute_sql(self, sql: str, fetch: bool = True) -> Optional[list[dict]]:
+        """Execute SQL and return results as list of dicts."""
+        if self.mode == "tcp":
+            return self._execute_sql_tcp(sql, fetch)
+        else:
+            return self._execute_sql_docker(sql, fetch)
 
     def _get_user_id(self) -> int:
         """Get the user ID (assumes single user)."""

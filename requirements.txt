@@ -1,12 +1,11 @@
 # Supernote Apple Reminders Sync - Python Dependencies
 #
-# This project uses only Python standard library modules.
-# No external Python packages are required.
+# Install with: pip install -r requirements.txt
 #
 # System Requirements:
 # - Python 3.11+
 # - macOS (for Apple Reminders access)
-# - Docker (for Supernote MariaDB container)
+# - Docker (for local MariaDB container) OR remote MariaDB server
 # - reminders-cli (https://github.com/keith/reminders-cli)
 #
 # To install reminders-cli:
@@ -15,3 +14,9 @@
 #   cd reminders-cli && swift build -c release
 #   mkdir -p ~/.local/bin
 #   cp .build/release/reminders ~/.local/bin/
+
+# For TCP connections to remote MariaDB (optional if using docker mode)
+pymysql>=1.1.0
+
+# For loading .env files (optional but recommended)
+python-dotenv>=1.0.0
