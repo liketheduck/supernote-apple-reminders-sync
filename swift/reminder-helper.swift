@@ -91,9 +91,18 @@ func setDueDate(listName: String, id: String, dateStr: String) -> Bool {
             } else {
                 // Try Python isoformat without timezone (assume local)
                 let localFormatter = DateFormatter()
-                localFormatter.dateFormat = "yyyy-MM-dd'T'HH:mm:ss"
+                // Try with microseconds first
+                localFormatter.dateFormat = "yyyy-MM-dd'T'HH:mm:ss.SSSSSS"
                 localFormatter.timeZone = .current
                 if let date = localFormatter.date(from: dateStr) {
+                    reminder.dueDateComponents = Calendar.current.dateComponents(
+                        [.year, .month, .day, .hour, .minute, .second],
+                        from: date
+                    )
+                } else if let date = { () -> Date? in
+                    localFormatter.dateFormat = "yyyy-MM-dd'T'HH:mm:ss"
+                    return localFormatter.date(from: dateStr)
+                }() {
                     reminder.dueDateComponents = Calendar.current.dateComponents(
                         [.year, .month, .day, .hour, .minute, .second],
                         from: date
