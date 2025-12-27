@@ -1,0 +1,22 @@
+{
+  "version": "1.0",
+  "supernote": {
+    "docker_container": "supernote-mariadb",
+    "database": "supernotedb",
+    "user": "supernote",
+    "password_env": "SUPERNOTE_DB_PASSWORD"
+  },
+  "apple_reminders": {
+    "reminders_cli_path": "~/.local/bin/reminders"
+  },
+  "sync": {
+    "conflict_resolution": "prefer_recent",
+    "conflict_window_seconds": 60,
+    "preserve_document_links": true,
+    "sync_completed_tasks": true
+  },
+  "logging": {
+    "level": "INFO",
+    "file": "logs/sync.log"
+  }
+}

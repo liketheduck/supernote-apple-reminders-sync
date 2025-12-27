@@ -1,0 +1,14 @@
+{
+  "version": "1.0",
+  "description": "Maps category/list names between Apple Reminders and Supernote",
+  "mappings": [
+    {"apple": "Inbox", "supernote": "Inbox"},
+    {"apple": "Work", "supernote": "Work"},
+    {"apple": "Personal", "supernote": "Personal"}
+  ],
+  "defaults": {
+    "apple": "Inbox",
+    "supernote": "Inbox"
+  },
+  "auto_create_missing": true
+}

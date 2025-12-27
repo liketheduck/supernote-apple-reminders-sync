@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Launchd plist for automatic sync every 15 minutes.
+
+  Setup:
+    1. Copy this file: cp com.supernote.reminders-sync.example.plist com.supernote.reminders-sync.plist
+    2. Edit the copy with your actual paths and password
+    3. Load: launchctl load ~/Library/LaunchAgents/com.supernote.reminders-sync.plist
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.supernote.reminders-sync</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/opt/homebrew/bin/python3</string>
+        <string>-m</string>
+        <string>src.main</string>
+        <string>sync</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/path/to/supernote-apple-reminders-sync</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>SUPERNOTE_DB_USER</key>
+        <string>supernote</string>
+        <key>SUPERNOTE_DB_PASSWORD</key>
+        <string>your-password-here</string>
+        <key>PATH</key>
+        <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+    </dict>
+
+    <!-- Run every 15 minutes -->
+    <key>StartInterval</key>
+    <integer>900</integer>
+
+    <!-- Also run at load -->
+    <key>RunAtLoad</key>
+    <false/>
+
+    <key>StandardOutPath</key>
+    <string>/path/to/supernote-apple-reminders-sync/logs/sync.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>/path/to/supernote-apple-reminders-sync/logs/sync.error.log</string>
+</dict>
+</plist>
