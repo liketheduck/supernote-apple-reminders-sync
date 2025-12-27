@@ -8,6 +8,13 @@ import os
 from pathlib import Path
 from typing import Optional
 
+# Load .env file if present
+try:
+    from dotenv import load_dotenv
+    load_dotenv(Path(__file__).parent.parent / ".env")
+except ImportError:
+    pass  # dotenv not installed, rely on environment variables
+
 
 def _get_project_root() -> Path:
     """Get the project root directory."""
@@ -29,8 +36,17 @@ def get_env(key: str, default: Optional[str] = None, required: bool = False) -> 
 # Database Configuration
 # =============================================================================
 
-# Docker container name running MariaDB
+# Connection mode: "docker" (docker exec) or "tcp" (direct connection)
+SUPERNOTE_DB_MODE = get_env("SUPERNOTE_DB_MODE", "tcp")
+
+# Docker container name running MariaDB (only used if mode=docker)
 SUPERNOTE_DOCKER_CONTAINER = get_env("SUPERNOTE_DOCKER_CONTAINER", "supernote-mariadb")
+
+# Database host (only used if mode=tcp)
+SUPERNOTE_DB_HOST = get_env("SUPERNOTE_DB_HOST", "localhost")
+
+# Database port (only used if mode=tcp)
+SUPERNOTE_DB_PORT = int(get_env("SUPERNOTE_DB_PORT", "3306"))
 
 # Database name
 SUPERNOTE_DB_NAME = get_env("SUPERNOTE_DB_NAME", "supernotedb")
@@ -98,7 +114,12 @@ SYNC_COMPLETED_TASKS = get_env("SYNC_COMPLETED_TASKS", "true").lower() == "true"
 def print_config():
     """Print current configuration (for debugging)."""
     print("Current Configuration:")
-    print(f"  SUPERNOTE_DOCKER_CONTAINER: {SUPERNOTE_DOCKER_CONTAINER}")
+    print(f"  SUPERNOTE_DB_MODE: {SUPERNOTE_DB_MODE}")
+    if SUPERNOTE_DB_MODE == "docker":
+        print(f"  SUPERNOTE_DOCKER_CONTAINER: {SUPERNOTE_DOCKER_CONTAINER}")
+    else:
+        print(f"  SUPERNOTE_DB_HOST: {SUPERNOTE_DB_HOST}")
+        print(f"  SUPERNOTE_DB_PORT: {SUPERNOTE_DB_PORT}")
     print(f"  SUPERNOTE_DB_NAME: {SUPERNOTE_DB_NAME}")
     print(f"  SUPERNOTE_DB_USER: {SUPERNOTE_DB_USER}")
     print(f"  SUPERNOTE_DB_PASSWORD: {'*' * 8} (set)" if os.environ.get("SUPERNOTE_DB_PASSWORD") else "  SUPERNOTE_DB_PASSWORD: NOT SET")
