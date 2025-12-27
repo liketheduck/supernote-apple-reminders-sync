@@ -7,8 +7,10 @@ Handles change detection, conflict resolution, and sync execution.
 
 from datetime import datetime, timedelta
 from typing import Optional
+from pathlib import Path
 import logging
 import uuid
+import json
 
 from .models import UnifiedTask, SyncRecord, SyncAction, SyncResult
 
@@ -58,6 +60,43 @@ class SyncEngine:
         self.supernote = supernote or SupernoteDB()
         self.apple = apple or AppleReminders()
         self.sync_state = sync_state or SyncState()
+        self._load_category_map()
+
+    def _load_category_map(self):
+        """Load category mapping from config/category_map.json."""
+        self._supernote_to_apple = {}
+        self._apple_to_supernote = {}
+        self._default_apple = "Reminders"
+        self._default_supernote = "Inbox"
+
+        config_path = Path(__file__).parent.parent / "config" / "category_map.json"
+        if config_path.exists():
+            try:
+                with open(config_path) as f:
+                    data = json.load(f)
+                for mapping in data.get("mappings", []):
+                    apple = mapping.get("apple")
+                    supernote = mapping.get("supernote")
+                    if apple and supernote:
+                        self._supernote_to_apple[supernote] = apple
+                        self._apple_to_supernote[apple] = supernote
+                defaults = data.get("defaults", {})
+                self._default_apple = defaults.get("apple", "Reminders")
+                self._default_supernote = defaults.get("supernote", "Inbox")
+            except (json.JSONDecodeError, KeyError) as e:
+                logger.warning(f"Failed to load category_map.json: {e}")
+
+    def map_category_to_apple(self, supernote_category: str) -> str:
+        """Map a Supernote category to an Apple Reminders list name."""
+        if not supernote_category:
+            return self._default_apple
+        return self._supernote_to_apple.get(supernote_category, supernote_category)
+
+    def map_category_to_supernote(self, apple_list: str) -> str:
+        """Map an Apple Reminders list name to a Supernote category."""
+        if not apple_list:
+            return self._default_supernote
+        return self._apple_to_supernote.get(apple_list, apple_list)
 
     def run_sync(self, dry_run: bool = False) -> SyncResult:
         """
@@ -548,6 +587,9 @@ class SyncEngine:
 
     def _execute_supernote_action(self, action: SyncAction, result: SyncResult):
         """Execute an action targeting Supernote."""
+        # Map Apple list name to Supernote category
+        action.task.category = self.map_category_to_supernote(action.task.category)
+
         if action.action == "create":
             self.supernote.create_task(action.task)
             result.apple_to_supernote_created += 1
@@ -565,6 +607,9 @@ class SyncEngine:
 
     def _execute_apple_action(self, action: SyncAction, result: SyncResult):
         """Execute an action targeting Apple Reminders."""
+        # Map Supernote category to Apple list name
+        action.task.category = self.map_category_to_apple(action.task.category)
+
         if action.action == "create":
             apple_id = self.apple.create_reminder(action.task)
             action.task.apple_id = apple_id
